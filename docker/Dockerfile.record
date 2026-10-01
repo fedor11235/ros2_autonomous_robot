@@ -1,0 +1,32 @@
+# arm64/amd64 ROS 2 Humble + Gazebo Fortress (gz-sim) image for HEADLESS video.
+# Renders the gz-sim GUI with software OpenGL (llvmpipe) inside Xvfb and captures
+# it with ffmpeg -- no GPU / X server on the host required.
+#
+#   docker build -f docker/Dockerfile.record -t autobot-record .
+#   docker run --rm -v "$PWD/media:/out" autobot-record            # -> media/demo.mp4
+FROM ros:humble-ros-base
+
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ros-humble-ros-gz-sim \
+      ros-humble-ros-gz-bridge \
+      ros-humble-ros-gz-image \
+      ros-humble-xacro \
+      ros-humble-robot-state-publisher \
+      ros-humble-joint-state-publisher \
+      ros-humble-rviz2 \
+      python3-colcon-common-extensions \
+      xvfb x11-utils x11-xserver-utils wmctrl fluxbox \
+      mesa-utils libgl1-mesa-dri libglu1-mesa \
+      ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /ws
+COPY src ./src
+RUN source /opt/ros/humble/setup.bash && colcon build --symlink-install
+
+COPY docker/record_demo.sh /record_demo.sh
+RUN chmod +x /record_demo.sh
+
+ENTRYPOINT ["/record_demo.sh"]

@@ -31,7 +31,7 @@ def generate_launch_description():
     world = LaunchConfiguration("world")
     use_sim_time = LaunchConfiguration("use_sim_time")
 
-    default_world = os.path.join(pkg_gazebo, "worlds", "course.world")
+    default_world = os.path.join(pkg_gazebo, "worlds", "course.sdf")
     rviz_config = os.path.join(pkg_description, "rviz", "robot.rviz")
 
     gazebo = IncludeLaunchDescription(

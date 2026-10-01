@@ -1,33 +1,26 @@
-# ROS 2 Humble + Gazebo Classic 11 image with the workspace pre-built.
+# ROS 2 Humble + Ignition/Gazebo Fortress (gz-sim) image with the workspace built.
+# Multi-arch (amd64/arm64).
 # Build:  docker build -t autobot .
 # Run  :  see docker-compose.yml / run.sh (needs X11 for the GUI).
-FROM osrf/ros:humble-desktop-full
+FROM ros:humble-ros-base
 
 SHELL ["/bin/bash", "-c"]
 
-# Runtime dependencies (desktop-full already ships Gazebo Classic + RViz).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ros-humble-gazebo-ros-pkgs \
-      ros-humble-gazebo-plugins \
+      ros-humble-ros-gz-sim \
+      ros-humble-ros-gz-bridge \
+      ros-humble-ros-gz-image \
       ros-humble-xacro \
       ros-humble-robot-state-publisher \
       ros-humble-joint-state-publisher \
-      ros-humble-joint-state-publisher-gui \
+      ros-humble-rviz2 \
       python3-colcon-common-extensions \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ws
 COPY src ./src
+RUN source /opt/ros/humble/setup.bash && colcon build --symlink-install
 
-# Resolve any remaining package deps, then build.
-RUN source /opt/ros/humble/setup.bash \
-    && apt-get update \
-    && rosdep update \
-    && rosdep install --from-paths src --ignore-src -r -y || true \
-    && rm -rf /var/lib/apt/lists/* \
-    && colcon build --symlink-install
-
-# Source ROS + workspace automatically in every shell.
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc \
     && echo "source /ws/install/setup.bash" >> /root/.bashrc
 

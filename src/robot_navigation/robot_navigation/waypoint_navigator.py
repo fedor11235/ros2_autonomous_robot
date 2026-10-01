@@ -76,6 +76,7 @@ class WaypointNavigator(Node):
         self.scan = None            # latest LaserScan
         self.wp_index = 0
         self.finished = False
+        self._avoid_latch = 0.0     # committed avoidance turn dir (anti-chatter)
 
         # ---------------- I/O ----------------
         sensor_qos = QoSProfile(
@@ -169,36 +170,36 @@ class WaypointNavigator(Node):
 
         cmd = Twist()
 
+        # Release the avoidance latch as soon as the path ahead is clear.
+        if front >= self.avoid_distance:
+            self._avoid_latch = 0.0
+
+        # The robot steers well only while moving (a stationary diff-drive just
+        # slips its wheels instead of turning), so EVERY branch keeps a forward
+        # velocity and turns as an arc -- the controller never pivots in place.
         if front < self.avoid_distance:
-            # ---- Reactive obstacle avoidance: turn toward the freer side ----
-            turn_dir = 1.0 if left > right else -1.0
-            cmd.angular.z = turn_dir * self.max_angular
-            if front > self.stop_distance:
-                # Creep forward a little while turning away.
-                cmd.linear.x = 0.08
-            else:
-                cmd.linear.x = 0.0
+            # ---- Reactive obstacle avoidance ----
+            # Latch the turn direction (toward the freer side) so it doesn't
+            # chatter when left/right clearances are similar, and arc away.
+            if self._avoid_latch == 0.0:
+                self._avoid_latch = 1.0 if left >= right else -1.0
+            cmd.angular.z = self._avoid_latch * self.max_angular
+            cmd.linear.x = 0.12
         else:
-            # ---- Go-to-goal ----
-            if abs(heading_err) > self.heading_align:
-                # Rotate (near) in place to line up with the goal first.
-                cmd.linear.x = 0.05
-                cmd.angular.z = clamp(self.kp_angular * heading_err,
-                                      -self.max_angular, self.max_angular)
-            else:
-                # Forward speed scaled by heading error and front clearance.
-                heading_scale = clamp(1.0 - abs(heading_err) / self.heading_align, 0.2, 1.0)
-                clear_scale = 1.0
-                if front < self.slow_distance:
-                    clear_scale = clamp(
-                        (front - self.avoid_distance) /
-                        max(1e-3, (self.slow_distance - self.avoid_distance)),
-                        0.2, 1.0)
-                speed = self.max_linear * heading_scale * clear_scale
-                speed = min(speed, 0.6 * dist + 0.05)  # ease in near the waypoint
-                cmd.linear.x = clamp(speed, 0.0, self.max_linear)
-                cmd.angular.z = clamp(self.kp_angular * heading_err,
-                                      -self.max_angular, self.max_angular)
+            # ---- Go-to-goal (pure-pursuit style arcing) ----
+            clear_scale = 1.0
+            if front < self.slow_distance:
+                clear_scale = clamp(
+                    (front - self.avoid_distance) /
+                    max(1e-3, (self.slow_distance - self.avoid_distance)),
+                    0.3, 1.0)
+            # Slow (but never stop) when badly misaligned so the turn is tighter.
+            heading_scale = clamp(1.0 - abs(heading_err) / math.pi, 0.35, 1.0)
+            speed = self.max_linear * heading_scale * clear_scale
+            speed = min(speed, 0.6 * dist + 0.1)          # ease in near the waypoint
+            cmd.linear.x = clamp(max(speed, 0.12), 0.0, self.max_linear)
+            cmd.angular.z = clamp(self.kp_angular * heading_err,
+                                  -self.max_angular, self.max_angular)
 
         self.cmd_pub.publish(cmd)
 

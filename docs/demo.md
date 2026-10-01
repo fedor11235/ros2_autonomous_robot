@@ -22,7 +22,7 @@ source install/setup.bash
 ros2 bag record -o demo_bag \
     /tf /tf_static /odom /scan /cmd_vel \
     /gps/fix /gps/odom /planned_path /waypoint_markers \
-    /camera/depth/image_raw
+    /camera/image /camera/depth_image
 ```
 
 Stop with `Ctrl-C` once the robot reaches the goal. Replay:

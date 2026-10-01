@@ -1,7 +1,12 @@
 """Publish the robot description (robot_state_publisher) and optionally RViz.
 
 Standalone-usable for inspecting the URDF without Gazebo:
-    ros2 launch robot_description description.launch.py rviz:=true
+    ros2 launch robot_description description.launch.py standalone_rviz:=true jsp_gui:=true
+
+NOTE: the arguments are deliberately named `jsp_gui` / `standalone_rviz` (not
+`gui` / `rviz`) so they do NOT collide with the Gazebo `gui` / top-level `rviz`
+configurations, which otherwise leak into this included launch file and would
+spuriously start joint_state_publisher_gui / a second RViz.
 """
 import os
 
@@ -9,9 +14,9 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -20,20 +25,22 @@ def generate_launch_description():
     rviz_config = os.path.join(pkg, "rviz", "robot.rviz")
 
     use_sim_time = LaunchConfiguration("use_sim_time")
-    use_gui = LaunchConfiguration("gui")
-    use_rviz = LaunchConfiguration("rviz")
+    use_gui = LaunchConfiguration("jsp_gui")
+    use_rviz = LaunchConfiguration("standalone_rviz")
 
-    # xacro is expanded at launch time; `Command` keeps it a string substitution.
+    # xacro is expanded at launch time; wrap in ParameterValue(value_type=str)
+    # so Humble does not try to parse the URDF string as YAML.
     robot_description = {
-        "robot_description": Command(["xacro ", xacro_file]),
+        "robot_description": ParameterValue(Command(["xacro ", xacro_file]),
+                                            value_type=str),
         "use_sim_time": use_sim_time,
     }
 
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="true"),
-        DeclareLaunchArgument("gui", default_value="false",
+        DeclareLaunchArgument("jsp_gui", default_value="false",
                               description="Run joint_state_publisher_gui (standalone URDF inspection only)."),
-        DeclareLaunchArgument("rviz", default_value="false"),
+        DeclareLaunchArgument("standalone_rviz", default_value="false"),
 
         Node(
             package="robot_state_publisher",

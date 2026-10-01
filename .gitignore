@@ -15,6 +15,10 @@ __pycache__/
 *.mcap
 rosbag2_*/
 
+# recorded demo videos (host externally, link from README)
+media/
+*.mp4
+
 # Editor / OS
 .vscode/
 .idea/

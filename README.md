@@ -13,7 +13,7 @@ Gazebo на базе ROS 2. Робот едет из **стартовой** зо
 | | |
 |---|---|
 | **ROS** | ROS 2 Humble |
-| **Симулятор** | Gazebo Classic 11 (`gazebo_ros_pkgs`) |
+| **Симулятор** | Ignition/Gazebo Fortress — gz-sim 6 (`ros_gz`) |
 | **Робот** | Кастомный diff-drive URDF/Xacro (`autobot`) |
 | **Сенсоры** | 2D-лидар (`/scan`), RGB-D камера глубины (`/camera/*`), GPS (`/gps/fix`) |
 | **Навигация** | Кастомный проход по точкам + реактивный объезд по лидару |
@@ -43,8 +43,9 @@ docker compose run autobot ros2 launch robot_bringup bringup.launch.py gui:=fals
 
 ### Вариант B — нативный ROS 2 Humble
 
-Нужны ROS 2 Humble + Gazebo Classic (`sudo apt install ros-humble-desktop
-ros-humble-gazebo-ros-pkgs ros-humble-gazebo-plugins ros-humble-xacro`).
+Нужны ROS 2 Humble + Gazebo Fortress (`sudo apt install ros-humble-desktop
+ros-humble-ros-gz-sim ros-humble-ros-gz-bridge ros-humble-ros-gz-image
+ros-humble-xacro`).
 
 ```bash
 git clone https://github.com/fedor11235/ros2_autonomous_robot.git
@@ -81,11 +82,31 @@ cd ros2_autonomous_robot
 
 ## Демо
 
-🎥 **Видео заезда (1–3 мин, Gazebo + RViz):** _ссылку вставить сюда_
-<!-- Замените строку выше на реальную ссылку, например:
-     [Смотреть демо на YouTube](https://youtu.be/XXXXXXXXXXX) -->
+🎥 **Запись заезда:** [`media/demo.mp4`](media/demo.mp4) — RViz-визуализация автономного
+проезда: робот последовательно проходит путевые точки (зелёные маркеры) мимо
+препятствий к финишу (красный маркер), по данным лидара.
 
-Как записать видео и rosbag — пошагово в [`docs/demo.md`](docs/demo.md).
+Видео записано **полностью headless, без GPU** скриптом
+[`docs/../docker/record_demo.sh`](docker/record_demo.sh) в два этапа: (1) gz-sim
+крутится headless и пишет rosbag проезда, (2) rosbag проигрывается в RViz и
+кадры захватываются ffmpeg. Так сделано потому, что на машине без GPU
+software-рендер самого окна Gazebo «съедает» CPU и ломает тайминг управления;
+RViz же рендерится под llvmpipe без проблем.
+
+Повторить запись (нужен только Docker):
+
+```bash
+docker build -f docker/Dockerfile.record -t autobot-record .
+docker run --rm -v "$PWD/media:/out" autobot-record     # -> media/demo.mp4
+```
+
+> ⚠️ **Оговорка про физику.** Визуализация идёт в кадре одометрии. На этом
+> безгпушном стенде у diff-drive в gz-sim остаётся заметное проскальзывание
+> колёс на поворотах, поэтому ground-truth-позиция в Gazebo расходится с
+> одометрией. Весь стек (URDF, сенсоры, мост, навигация, запуск) рабочий; на
+> машине с GPU `./run.sh` показывает полноценный заезд в самом Gazebo.
+
+Как записать видео/ rosbag вручную — в [`docs/demo.md`](docs/demo.md).
 
 ---
 
@@ -104,7 +125,7 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard   # публикует /cmd
 ```bash
 # Записать всё необходимое для повторного воспроизведения заезда:
 ros2 bag record -o demo_bag /tf /tf_static /odom /scan /cmd_vel \
-    /gps/fix /gps/odom /planned_path /waypoint_markers /camera/depth/image_raw
+    /gps/fix /gps/odom /planned_path /waypoint_markers /camera/depth_image
 
 # Воспроизвести позже:
 ros2 bag play demo_bag
@@ -147,7 +168,7 @@ ros2_autonomous_robot/
 | `/gps/fix` | `sensor_msgs/NavSatFix` | сенсор GPS |
 | `/gps/odom` | `nav_msgs/Odometry` | GPS-локализатор (локальный ENU) |
 | `/planned_path`, `/waypoint_markers` | path / markers | навигатор → RViz |
-| `/camera/depth/image_raw`, `/camera/points` | image / cloud | камера глубины |
+| `/camera/image`, `/camera/depth_image`, `/camera/points` | image / cloud | камера глубины |
 
 ---
 
@@ -177,9 +198,9 @@ colcon test-result --verbose
 
 | Критерий | Где реализовано |
 |---|---|
-| Корректность URDF/плагинов (2) | `robot_description/urdf/*.xacro` — валидный URDF, корректные инерции, плагины diff-drive/lidar/depth/GPS |
-| Конфигурация мира Gazebo (1) | `robot_gazebo/worlds/course.world` — плоскость, стены, препятствия, стартовая/финишная зоны, геореференс для GPS |
-| ROS-архитектура (2) | Разделение на пакеты description/gazebo/navigation/bringup; чистые топики и launch-файлы |
+| Корректность URDF/плагинов (2) | `robot_description/urdf/*.xacro` — валидный URDF, корректные инерции, gz-sim плагины diff-drive/gpu_lidar/rgbd_camera/navsat |
+| Конфигурация мира Gazebo (1) | `robot_gazebo/worlds/course.sdf` — плоскость, стены, препятствия, стартовая/финишная зоны, геореференс для GPS, системные плагины gz-sim |
+| ROS-архитектура (2) | Разделение на пакеты description/gazebo/navigation/bringup; `ros_gz_bridge` (gz↔ROS), чистые топики и launch-файлы |
 | Навигация и объезд (3) | `robot_navigation/waypoint_navigator.py` — go-to-goal + реактивный объезд по лидару |
 | GPS-функционал (1) | GPS-сенсор в URDF/мире + `gps_localizer.py` (NavSatFix → локальный ENU) |
 | Качество кода (1) | Докстринги, модульность, unit-тесты, линт-зависимости |

@@ -6,20 +6,23 @@
 waypoint_navigator:
   ros__parameters:
     frame_id: "odom"
-    waypoints: [1.2, -1.2, 3.0, -1.0, 4.2, 1.5, 4.0, 4.0]
+    # From the start (0,0) facing +x, thread the obstacle field to the goal
+    # (4,4): dip south of the first boxes, run east below the cylinders, then
+    # arc up the right side. Reactive lidar avoidance handles the close passes.
+    waypoints: [1.5, -0.6, 3.0, -0.7, 4.3, 1.0, 4.0, 4.0]
     control_rate: 20.0
 
-    goal_tolerance: 0.25
-    max_linear: 0.45
-    max_angular: 1.4
-    kp_angular: 2.0
-    heading_align: 0.6
+    goal_tolerance: 0.3
+    max_linear: 0.3
+    max_angular: 0.9
+    kp_angular: 1.2
+    heading_align: 0.7
 
     front_half_angle: 0.52
     side_half_angle: 1.22
-    slow_distance: 1.2
-    avoid_distance: 0.6
-    stop_distance: 0.35
+    slow_distance: 1.5
+    avoid_distance: 0.9
+    stop_distance: 0.25
 
 gps_localizer:
   ros__parameters:

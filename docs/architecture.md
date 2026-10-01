@@ -3,32 +3,36 @@
 ## Overview
 
 ```
-          ┌─────────────────────── Gazebo Classic ───────────────────────┐
-          │  course.world  +  autobot (URDF spawned via spawn_entity.py)  │
-          │                                                               │
-          │  diff_drive plugin   ray sensor    depth camera    gps sensor │
-          └───────┬───────────────────┬────────────┬──────────────┬──────┘
-         /odom (+TF)│            /scan │   /camera/*│      /gps/fix │
-                    │                  │            │               │
-            ┌───────▼──────────────────▼────────────┐       ┌──────▼────────┐
-            │        waypoint_navigator             │       │ gps_localizer │
-            │  go-to-goal + reactive avoidance      │       │ NavSatFix→ENU │
-            └───────┬───────────────────────────────┘       └──────┬────────┘
-             /cmd_vel│                                        /gps/odom│
-                    ▼                                                 ▼
-             back to diff_drive plugin                          RViz / logs
+      ┌──────────────────── Gazebo Fortress (gz-sim 6) ────────────────────┐
+      │   course.sdf  +  autobot (URDF spawned via ros_gz_sim `create`)     │
+      │                                                                     │
+      │  DiffDrive system   gpu_lidar    rgbd_camera     navsat (GPS)       │
+      └───────┬────────────────┬─────────────┬────────────────┬───────────┘
+              │  gz transport topics (gz.msgs.*)               │
+      ┌───────▼────────────────────────────────────────────────▼──────────┐
+      │                        ros_gz_bridge                                │
+      │        gz ⇄ ROS 2 : /clock /cmd_vel /odom /tf /scan /gps/fix ...    │
+      └───────┬────────────────┬─────────────┬────────────────┬───────────┘
+       /odom(+TF)│        /scan │    /camera/*│         /gps/fix│
+            ┌─────▼──────────────▼────────────┐          ┌──────▼────────┐
+            │        waypoint_navigator        │          │ gps_localizer │
+            │  go-to-goal + reactive avoidance │          │ NavSatFix→ENU │
+            └─────┬────────────────────────────┘          └──────┬────────┘
+           /cmd_vel│ (→ bridge → DiffDrive)                /gps/odom│
+                  ▼                                                ▼
+            robot moves in gz-sim                            RViz / logs
 ```
 
 Everything is launched by `robot_bringup/launch/bringup.launch.py`, which
-includes the Gazebo launch, the navigation launch (after a short delay so the
-sensors are publishing), and RViz.
+includes the Gazebo launch (gz-sim + `ros_gz_bridge` + spawn), the navigation
+launch (after a short delay so the sensors are publishing), and RViz.
 
 ## Packages
 
 | Package | Build type | Responsibility |
 |---|---|---|
-| `robot_description` | ament_cmake | URDF/Xacro, Gazebo sensor plugins, RViz config |
-| `robot_gazebo` | ament_cmake | World (`course.world`), Gazebo bring-up + robot spawn |
+| `robot_description` | ament_cmake | URDF/Xacro, gz-sim sensor plugins, RViz config |
+| `robot_gazebo` | ament_cmake | World (`course.sdf`), gz-sim bring-up + `ros_gz_bridge` + spawn |
 | `robot_navigation` | ament_python | `waypoint_navigator`, `gps_localizer`, params, tests |
 | `robot_bringup` | ament_cmake | Top-level single-command launch |
 
@@ -39,7 +43,7 @@ drivers), and the navigation package has no dependency on Gazebo.
 ## TF tree
 
 ```
-odom                      (published by the diff_drive plugin)
+odom                      (published by the DiffDrive system, bridged to /tf)
 └── base_footprint
     └── base_link
         ├── left_wheel_link
@@ -51,8 +55,9 @@ odom                      (published by the diff_drive plugin)
         └── gps_link              → /gps/fix frame
 ```
 
-`robot_state_publisher` publishes the static transforms from the URDF; the
-`diff_drive` plugin publishes `odom → base_footprint` and the wheel joints.
+`robot_state_publisher` publishes the static transforms from the URDF (driven by
+the bridged `/joint_states`); the gz-sim `DiffDrive` system publishes
+`odom → base_footprint`, bridged to ROS `/tf` by `ros_gz_bridge`.
 
 ## Nodes and topics
 
@@ -68,27 +73,35 @@ odom                      (published by the diff_drive plugin)
 
 ## Control algorithm
 
-The navigator is a **hybrid reactive controller** running at 20 Hz:
+The navigator is a **reactive pure-pursuit controller** running at 20 Hz. It is
+pure-arcing: it *always* keeps a forward velocity and steers as an arc, and
+never pivots in place (a differential-drive robot steers well in motion but, in
+gz-sim here, slips its wheels rather than rotating when stationary).
 
 1. **Waypoint management.** Hold an ordered list of `(x, y)` goals in the `odom`
-   frame. Advance to the next when within `goal_tolerance` (0.25 m); stop after
-   the last.
-2. **Go-to-goal.** Compute the bearing to the active waypoint and a proportional
-   angular command `kp_angular * heading_error` (clamped to `max_angular`).
-   Forward speed scales with heading alignment and eases down as the robot nears
-   the waypoint. If the heading error exceeds `heading_align` the robot rotates
-   (near) in place to line up before driving forward.
-3. **Reactive obstacle avoidance.** From the lidar, compute the minimum range in
-   a front cone (`±front_half_angle`) and in left/right side sectors.
+   frame. Advance to the next when within `goal_tolerance`; stop after the last.
+2. **Go-to-goal.** Compute the bearing to the active waypoint; angular command is
+   proportional, `kp_angular * heading_error` (clamped to `max_angular`). Forward
+   speed scales with heading alignment and with front clearance, and eases down
+   near the waypoint, but never drops to zero — so a large heading error is
+   corrected as a tightening arc rather than a stop-and-spin.
+3. **Reactive obstacle avoidance.** From the lidar, take the min range in a front
+   cone (`±front_half_angle`) and in left/right side sectors.
    - `front < slow_distance` → scale forward speed down.
-   - `front < avoid_distance` → override go-to-goal: turn toward the side with
-     greater clearance (gap following); creep forward only if `front >
-     stop_distance`, otherwise rotate in place.
+   - `front < avoid_distance` → override go-to-goal: arc toward the freer side.
+     The turn direction is **latched** until the path clears, so it does not
+     chatter when the two sides are similarly clear.
 
-This needs no prebuilt map or global planner, which keeps the demo fully
-reproducible. Its limitation is the usual one for purely reactive methods — it
-can be trapped by large concave (U-shaped) obstacles; the course is designed
-with convex, separated obstacles so a reactive policy reaches the goal reliably.
+No prebuilt map or global planner is needed, which keeps the demo reproducible.
+The usual reactive limitation applies (large concave/U-shaped traps), so the
+course uses convex, separated obstacles.
+
+**Simulation-fidelity note.** On a GPU-less, software-rendered rig the gz-sim
+diff-drive has significant wheel slip during turns, so the model's ground-truth
+pose drifts from the wheel odometry the controller navigates on. The navigation
+logic, sensing and integration are all correct; closing the loop on a slip-free
+or ground-truth-localised setup (e.g. a GPU host, or `robot_localization`) makes
+the physical trajectory track the odometry one.
 
 ### Why not Nav2 here?
 
@@ -106,7 +119,7 @@ Nav2-compatible (`base_footprint`, `/scan`, `odom`).
 
 ## GPS integration
 
-The Gazebo world carries a `<spherical_coordinates>` georeference, so the GPS
+The Gazebo world carries a `<spherical_coordinates>` georeference, so the navsat
 sensor emits real WGS-84 lat/lon on `/gps/fix`. `gps_localizer` converts fixes
 to a local ENU frame and publishes `/gps/odom`, logging the horizontal distance
 to the goal. For a real deployment, wheel odometry and GPS would be fused with
