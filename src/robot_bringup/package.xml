@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_bringup</name>
+  <version>1.0.0</version>
+  <description>Top-level single-command bring-up for the autonomous robot (Gazebo + navigation + RViz).</description>
+  <maintainer email="fedor11235@users.noreply.github.com">Fedor</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robot_description</exec_depend>
+  <exec_depend>robot_gazebo</exec_depend>
+  <exec_depend>robot_navigation</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

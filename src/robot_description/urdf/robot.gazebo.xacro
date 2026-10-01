@@ -1,0 +1,197 @@
+<?xml version="1.0"?>
+<!--
+  Gazebo-specific description: material colours, surface friction, and the
+  ROS 2 sensor/actuator plugins (all from gazebo_ros_pkgs, Humble):
+    * differential drive  -> publishes /odom (+ TF), subscribes /cmd_vel
+    * 2D lidar (ray)       -> publishes /scan
+    * RGB-D depth camera   -> publishes /camera/{image_raw,depth/*,points}
+    * GPS                  -> publishes /gps/fix (sensor_msgs/NavSatFix)
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- ============================ Materials (Gazebo) ============================ -->
+  <gazebo reference="base_link">
+    <material>Gazebo/Blue</material>
+  </gazebo>
+  <gazebo reference="left_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1e6</kp>
+    <kd>1.0</kd>
+  </gazebo>
+  <gazebo reference="right_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>1e6</kp>
+    <kd>1.0</kd>
+  </gazebo>
+  <gazebo reference="caster_link">
+    <material>Gazebo/Grey</material>
+    <!-- Near-frictionless so the passive caster slides freely -->
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
+    <kp>1e6</kp>
+    <kd>1.0</kd>
+  </gazebo>
+  <gazebo reference="lidar_link">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+  <gazebo reference="camera_link">
+    <material>Gazebo/White</material>
+  </gazebo>
+  <gazebo reference="gps_link">
+    <material>Gazebo/Green</material>
+  </gazebo>
+
+  <!-- ============================ Differential drive ============================ -->
+  <gazebo>
+    <plugin name="diff_drive" filename="libgazebo_ros_diff_drive.so">
+      <ros>
+        <namespace>/</namespace>
+      </ros>
+
+      <!-- wheels -->
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+
+      <!-- kinematics (must match URDF) -->
+      <wheel_separation>0.34</wheel_separation>
+      <wheel_diameter>0.13</wheel_diameter>
+
+      <!-- limits -->
+      <max_wheel_torque>20.0</max_wheel_torque>
+      <max_wheel_acceleration>2.0</max_wheel_acceleration>
+
+      <!-- topics / frames -->
+      <command_topic>cmd_vel</command_topic>
+      <odometry_topic>odom</odometry_topic>
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+
+      <!-- output -->
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>true</publish_wheel_tf>
+      <update_rate>50</update_rate>
+    </plugin>
+  </gazebo>
+
+  <!-- ============================ Joint states ============================ -->
+  <gazebo>
+    <plugin name="joint_states" filename="libgazebo_ros_joint_state_publisher.so">
+      <ros>
+        <namespace>/</namespace>
+      </ros>
+      <update_rate>50</update_rate>
+      <joint_name>left_wheel_joint</joint_name>
+      <joint_name>right_wheel_joint</joint_name>
+    </plugin>
+  </gazebo>
+
+  <!-- ============================ 2D Lidar ============================ -->
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="ray">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <update_rate>10</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1.0</resolution>
+            <min_angle>-3.141592</min_angle>
+            <max_angle>3.141592</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <plugin name="lidar_controller" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <namespace>/</namespace>
+          <remapping>~/out:=scan</remapping>
+        </ros>
+        <output_type>sensor_msgs/LaserScan</output_type>
+        <frame_name>lidar_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ============================ Depth camera ============================ -->
+  <gazebo reference="camera_link">
+    <sensor name="depth_camera" type="depth">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <update_rate>15</update_rate>
+      <camera name="astra">
+        <horizontal_fov>1.047198</horizontal_fov> <!-- ~60 deg -->
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.2</near>
+          <far>8.0</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <plugin name="depth_camera_controller" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/</namespace>
+        </ros>
+        <camera_name>camera</camera_name>
+        <frame_name>camera_optical_link</frame_name>
+        <hack_baseline>0.07</hack_baseline>
+        <min_depth>0.2</min_depth>
+        <max_depth>8.0</max_depth>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ============================ GPS ============================ -->
+  <gazebo reference="gps_link">
+    <sensor name="gps" type="gps">
+      <always_on>true</always_on>
+      <update_rate>5</update_rate>
+      <gps>
+        <position_sensing>
+          <horizontal>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.8</stddev>   <!-- ~metre-level civilian GPS -->
+            </noise>
+          </horizontal>
+          <vertical>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>1.5</stddev>
+            </noise>
+          </vertical>
+        </position_sensing>
+      </gps>
+      <plugin name="gps_controller" filename="libgazebo_ros_gps_sensor.so">
+        <ros>
+          <namespace>/</namespace>
+          <remapping>~/out:=gps/fix</remapping>
+        </ros>
+        <frame_name>gps_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+</robot>

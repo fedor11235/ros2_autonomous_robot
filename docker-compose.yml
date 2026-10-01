@@ -1,0 +1,20 @@
+# Convenience wrapper for running the simulation in Docker with GUI forwarding.
+#
+#   xhost +local:root        # allow the container to use the host X server (Linux)
+#   docker compose up --build
+#
+# On Linux with an X server this brings up Gazebo + RViz + autonomy in one step.
+services:
+  autobot:
+    build: .
+    image: autobot
+    container_name: autobot
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    network_mode: host
+    # Default command (bringup) comes from the image CMD. Override, e.g.:
+    #   docker compose run autobot ros2 launch robot_bringup bringup.launch.py gui:=false

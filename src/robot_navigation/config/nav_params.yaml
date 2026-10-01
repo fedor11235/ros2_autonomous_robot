@@ -1,0 +1,30 @@
+# Parameters for the autonomous navigation nodes.
+# Waypoints are a flat [x0, y0, x1, y1, ...] list in the `frame_id` frame.
+# The default route threads between the course obstacles from start (0,0)
+# to the red goal zone at (4, 4).
+
+waypoint_navigator:
+  ros__parameters:
+    frame_id: "odom"
+    waypoints: [1.2, -1.2, 3.0, -1.0, 4.2, 1.5, 4.0, 4.0]
+    control_rate: 20.0
+
+    goal_tolerance: 0.25
+    max_linear: 0.45
+    max_angular: 1.4
+    kp_angular: 2.0
+    heading_align: 0.6
+
+    front_half_angle: 0.52
+    side_half_angle: 1.22
+    slow_distance: 1.2
+    avoid_distance: 0.6
+    stop_distance: 0.35
+
+gps_localizer:
+  ros__parameters:
+    frame_id: "gps"
+    child_frame_id: "base_footprint"
+    goal_east: 4.0
+    goal_north: 4.0
+    log_period: 2.0
